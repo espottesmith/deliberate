@@ -45,6 +45,46 @@ def bucket_molecules(molecules: List[Dict], keys: List[Callable]) -> Dict:
     return buckets
 
 
+def _get_bond_lengths(m):
+    """
+    Args:
+        m: A dictionary representing a molecule entry in LIBE
+
+    Returns:
+        A list of tuple (species, length), where species are the two species
+        associated with a bond and length is the corresponding bond length.
+    """
+    coords = m["molecule"].cart_coords
+    res = list()
+    for a1, a2 in m["bonds"]:
+        s1 = m["species"][a1]
+        s2 = m["species"][a2]
+        c1 = np.asarray(coords[a1])
+        c2 = np.asarray(coords[a2])
+        length = np.linalg.norm(c1 - c2)
+        res.append((tuple(sorted([s1, s2])), length))
+    return res
+
+
+def _get_neighbor_species(m):
+    """
+    Args:
+        m: A dictionary representing a molecule entry in LIBE
+
+    Returns:
+        A list of tuple (atom species, bonded atom species),
+        where `bonded_atom_species` is a list.
+        Each tuple represents an atom and its bonds.
+    """
+    res = [(s, list()) for s in m["species"]]
+    for a1, a2 in m["bonds"]:
+        s1 = m["species"][a1]
+        s2 = m["species"][a2]
+        res[a1][1].append(s2)
+        res[a2][1].append(s1)
+    return res
+
+
 def check_species(mol: Dict, species: List[str]) -> Tuple[bool, Optional[str]]:
     """
     Check whether molecule contains species given in `species`.
@@ -114,46 +154,6 @@ def check_bond_species(
         return contains, None
     else:
         return contains, reason
-
-
-def _get_bond_lengths(m):
-    """
-    Args:
-        m: A dictionary representing a molecule entry in LIBE
-
-    Returns:
-        A list of tuple (species, length), where species are the two species
-        associated with a bond and length is the corresponding bond length.
-    """
-    coords = m["molecule"].cart_coords
-    res = list()
-    for a1, a2 in m["bonds"]:
-        s1 = m["species"][a1]
-        s2 = m["species"][a2]
-        c1 = np.asarray(coords[a1])
-        c2 = np.asarray(coords[a2])
-        length = np.linalg.norm(c1 - c2)
-        res.append((tuple(sorted([s1, s2])), length))
-    return res
-
-
-def _get_neighbor_species(m):
-    """
-    Args:
-        m: A dictionary representing a molecule entry in LIBE
-
-    Returns:
-        A list of tuple (atom species, bonded atom species),
-        where `bonded_atom_species` is a list.
-        Each tuple represents an atom and its bonds.
-    """
-    res = [(s, list()) for s in m["species"]]
-    for a1, a2 in m["bonds"]:
-        s1 = m["species"][a1]
-        s2 = m["species"][a2]
-        res[a1][1].append(s2)
-        res[a2][1].append(s1)
-    return res
 
 
 def check_bond_length(mol: Dict) -> Tuple[bool, Optional[List[str]]]:
@@ -303,8 +303,32 @@ def check_num_bonds(
     return do_fail, reason
 
 
+def check_negative_frequencies(
+    mol: Dict
+) -> Tuple[bool, None]:
+    """
+    Check if a molecule contains any negative frequencies.
+    
+    Args:
+        mol (Dict): A dictionary representing a molecule entry in LIBE
+        
+    Returns:
+        Tuple[bool, None]: if the molecule has a negative/imaginary frequency,
+        then return True; otherwise, return False
+    """
+    
+    if mol["vibration"] is None:
+        return False, None
+    
+    if any([x < 0 for x in mol["vibration"]["frequencies"]]):
+        return True, None
+    else:
+        return False, None
+
+
 def filter_by_charge_and_isomorphism(
     molecules: List[Dict],
+    verbose: bool = False
 ) -> List[Dict]:
     """
     For molecules of the same isomorphism and charge, remove the ones with higher
@@ -313,10 +337,10 @@ def filter_by_charge_and_isomorphism(
     Args:
         mol_entries (List[Dict]): a list of dictionaries representing molecule
         entries in LIBE
+        verbose (bool): If True (default False), indicate which molecules failed this check
 
     Returns:
-        low_energy_entries (List[Dict]): molecule entries with high free energy
-        ones removed
+        low_energy_entries (List[Dict]): molecule entries with high energy ones removed
     """
 
     # convert list of entries to nested dicts
@@ -353,6 +377,12 @@ def filter_by_charge_and_isomorphism(
                         low_energy_entries.append(entry)
 
                 all_entries.extend(low_energy_entries)
+                
+    if verbose:
+        remaining_mol_ids = [m["molecule_id"] for m in all_entries]
+        removed_mol_ids = [m["molecule_id"] for m in molecules if m["molecule_id"] not in remaining_mol_ids]
+        for removed_mol_id in removed_mol_ids:
+            print(removed_mol_id)
 
     return all_entries
 
@@ -443,7 +473,7 @@ def filter_bond_length(molecules: List[Dict], verbose: bool = False) -> List[Dic
 
 def filter_num_bonds(molecules: List[Dict], verbose: bool = False) -> List[Dict]:
     """
-    remove mols with unexpected number of bonds (e.g. more than 4 bonds for carbon),
+    Remove mols with unexpected number of bonds (e.g. more than 4 bonds for carbon),
     without considering metal species
 
     Args:
@@ -462,6 +492,31 @@ def filter_num_bonds(molecules: List[Dict], verbose: bool = False) -> List[Dict]
         else:
             succeeded.append(m)
 
+    return succeeded
+
+
+def filter_negative_frequencies(molecules: List[Dict], verbose: bool = False) -> List[Dict]:
+    """
+    Remove mols with any negative/imaginary frequencies.
+    
+    Args:
+        molecules (List[Dict]): a list of dictionaries representing molecule entries in LIBE
+        verbose (bool): If True (default False), indicate which molecules failed this check
+        
+    Returns:
+        succeeded (List[Dict]): Molecule entry dictionaries that passed this check
+    
+    """
+    
+    succeeded = list()
+    for m in molecules:
+        fail, comment = check_negative_frequencies(m)
+        if fail:
+            if verbose:
+                print(m["molecule_id"])
+        else:
+            succeeded.append(m)
+            
     return succeeded
 
 
@@ -486,7 +541,7 @@ def filter_dataset(
 
     remaining = molecules
     for f in filters:
-        remaining = f(remaining)
+        remaining = f(remaining, verbose=verbose)
         print("Number of molecules after {}: {}".format(f.__name__, len(remaining)))
 
     return remaining
