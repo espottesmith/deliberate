@@ -17,8 +17,8 @@ setup(
     author="Evan Spotte-Smith",
     author_email="espottesmith@gmail.com",
     license="MIT",
-    packages=find_packages("deliberate"),
-    package_dir={"": "deliberate"},
+    packages=find_packages("src"),
+    package_dir={"": "src"},
     zip_safe=False,
     install_requires=[
         "setuptools",

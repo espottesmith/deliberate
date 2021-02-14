@@ -12,6 +12,7 @@ The notebooks included here require the following libraries. We recommend that y
 - Matplotlib
 - Seaborn
 - NetworkX
+- OpenBabel / pybel
 - [monty](https://github.com/materialsvirtuallab/monty)
 - [pymatgen](https://github.com/materialsproject/pymatgen)
 
@@ -20,3 +21,7 @@ While not used directly in this repository, the following libraries are necessar
 - [custodian](https://github.com/materialsproject/custodian)
 - [atomate](https://github.com/hackingmaterials/atomate)
 - [bondnet](https://github.com/mjwen/bondnet)
+
+## Installation
+
+In order to use the utility code provided in `src`, run `python setup.py develop`. After running this command, all Jupyter notebooks should run all code without error.
